@@ -1,9 +1,8 @@
 # ==========================================
-# DoDigitBot - Full Telegram Bot
+# DoDigitBot - Advanced Version
 # Hosting: Render
 # ==========================================
 
-# INSTALL:
 # pip install pyTelegramBotAPI flask
 
 import telebot
@@ -25,6 +24,8 @@ CHANNEL_USERNAME = "@star_otps"
 
 UPI_ID = "paytm.s255mng@pty"
 
+PRICE = "₹199"
+
 # ==========================================
 # BOT
 # ==========================================
@@ -39,7 +40,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Running"
+    return "DoDigitBot Running"
 
 def run():
     port = int(os.environ.get("PORT", 10000))
@@ -70,7 +71,7 @@ if not os.path.exists(DB_FILE):
         json.dump(sample, f, indent=4)
 
 # ==========================================
-# LOAD DATABASE
+# LOAD / SAVE
 # ==========================================
 
 def load_accounts():
@@ -84,11 +85,61 @@ def save_accounts(data):
         json.dump(data, f, indent=4)
 
 # ==========================================
+# CHECK CHANNEL JOIN
+# ==========================================
+
+def is_joined(user_id):
+
+    try:
+
+        member = bot.get_chat_member(
+            CHANNEL_USERNAME,
+            user_id
+        )
+
+        if member.status in [
+            "member",
+            "administrator",
+            "creator"
+        ]:
+            return True
+
+        return False
+
+    except:
+        return False
+
+# ==========================================
 # START
 # ==========================================
 
 @bot.message_handler(commands=['start'])
 def start(message):
+
+    if not is_joined(message.from_user.id):
+
+        keyboard = types.InlineKeyboardMarkup()
+
+        join_btn = types.InlineKeyboardButton(
+            "📢 Join Channel",
+            url="https://t.me/star_otps"
+        )
+
+        check_btn = types.InlineKeyboardButton(
+            "✅ Check Again",
+            callback_data="check_join"
+        )
+
+        keyboard.add(join_btn)
+        keyboard.add(check_btn)
+
+        bot.send_message(
+            message.chat.id,
+            "🚫 Join our channel first.",
+            reply_markup=keyboard
+        )
+
+        return
 
     keyboard = types.InlineKeyboardMarkup(row_width=2)
 
@@ -120,7 +171,8 @@ def start(message):
         "🚀 *DoDigitBot*\n\n"
         "💎 Premium Telegram Accounts\n"
         "⚡ Instant Delivery\n"
-        "🔒 Trusted Seller",
+        "🔒 Trusted Seller\n\n"
+        "📦 Fresh Stock Available",
         parse_mode="Markdown",
         reply_markup=keyboard
     )
@@ -133,28 +185,21 @@ def start(message):
 def callback_handler(call):
 
     # ======================
-    # BUY
+    # CHECK JOIN
     # ======================
 
-    if call.data == "buy":
+    if call.data == "check_join":
 
-        keyboard = types.InlineKeyboardMarkup()
+        if is_joined(call.from_user.id):
 
-        paid_btn = types.InlineKeyboardButton(
-            "✅ I Have Paid",
-            callback_data="paid"
-        )
+            start(call.message)
 
-        keyboard.add(paid_btn)
+        else:
 
-        bot.send_message(
-            call.message.chat.id,
-            f"💰 Price: ₹199\n\n"
-            f"📲 UPI ID:\n"
-            f"`{UPI_ID}`",
-            parse_mode="Markdown",
-            reply_markup=keyboard
-        )
+            bot.answer_callback_query(
+                call.id,
+                "❌ Join channel first."
+            )
 
     # ======================
     # STOCK
@@ -174,57 +219,222 @@ def callback_handler(call):
         )
 
     # ======================
+    # BUY
+    # ======================
+
+    elif call.data == "buy":
+
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+
+        paid_btn = types.InlineKeyboardButton(
+            "✅ I Have Paid",
+            callback_data="paid"
+        )
+
+        copy_btn = types.InlineKeyboardButton(
+            "📋 Copy UPI",
+            url=f"https://upi://pay?pa={UPI_ID}"
+        )
+
+        channel_btn = types.InlineKeyboardButton(
+            "📢 Join Channel",
+            url="https://t.me/star_otps"
+        )
+
+        keyboard.add(paid_btn)
+        keyboard.add(copy_btn)
+        keyboard.add(channel_btn)
+
+        caption = (
+            f"💰 *Payment Details*\n\n"
+            f"💵 Amount: {PRICE}\n"
+            f"📲 UPI ID:\n`{UPI_ID}`\n\n"
+            f"⚠️ After payment click below."
+        )
+
+        photo = open("qr.jpg", "rb")
+
+        bot.send_photo(
+            call.message.chat.id,
+            photo,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+
+    # ======================
     # PAID
     # ======================
 
     elif call.data == "paid":
 
-        accounts = load_accounts()
+        msg = bot.send_message(
+            call.message.chat.id,
+            "📨 Send your UTR / Transaction ID"
+        )
 
-        selected = None
+        bot.register_next_step_handler(
+            msg,
+            verify_payment
+        )
 
-        for acc in accounts:
+# ==========================================
+# VERIFY PAYMENT
+# ==========================================
 
-            if not acc["sold"]:
-                selected = acc
-                break
+def verify_payment(message):
 
-        if selected is None:
+    utr = message.text.strip()
 
-            bot.send_message(
-                call.message.chat.id,
-                "❌ Out of stock."
+    if len(utr) < 5:
+
+        bot.send_message(
+            message.chat.id,
+            "❌ Invalid UTR."
+        )
+
+        return
+
+    accounts = load_accounts()
+
+    selected = None
+
+    for acc in accounts:
+
+        if not acc["sold"]:
+
+            selected = acc
+            break
+
+    if selected is None:
+
+        bot.send_message(
+            message.chat.id,
+            "❌ Out of stock."
+        )
+
+        return
+
+    # ======================================
+    # SEND UTR TO ADMIN
+    # ======================================
+
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+
+    approve_btn = types.InlineKeyboardButton(
+        "✅ Approve",
+        callback_data=f"approve_{message.from_user.id}"
+    )
+
+    reject_btn = types.InlineKeyboardButton(
+        "❌ Reject",
+        callback_data=f"reject_{message.from_user.id}"
+    )
+
+    keyboard.add(approve_btn, reject_btn)
+
+    bot.send_message(
+        ADMIN_ID,
+        f"🛒 New Payment Request\n\n"
+        f"👤 User ID: {message.from_user.id}\n"
+        f"💳 UTR: {utr}",
+        reply_markup=keyboard
+    )
+
+    # TEMP SAVE
+    pending[str(message.from_user.id)] = selected
+
+    bot.send_message(
+        message.chat.id,
+        "⏳ Payment verification pending.\n"
+        "Admin will verify shortly."
+    )
+
+# ==========================================
+# TEMP STORAGE
+# ==========================================
+
+pending = {}
+
+# ==========================================
+# APPROVE / REJECT
+# ==========================================
+
+@bot.callback_query_handler(func=lambda call:
+    call.data.startswith("approve_") or
+    call.data.startswith("reject_"))
+def admin_actions(call):
+
+    # ======================
+    # APPROVE
+    # ======================
+
+    if call.data.startswith("approve_"):
+
+        user_id = call.data.split("_")[1]
+
+        if user_id not in pending:
+
+            bot.answer_callback_query(
+                call.id,
+                "Expired."
             )
-
             return
 
-        # MARK SOLD
+        selected = pending[user_id]
+
+        accounts = load_accounts()
+
         for acc in accounts:
 
             if acc["phone"] == selected["phone"]:
+
                 acc["sold"] = True
 
         save_accounts(accounts)
 
-        # SEND ACCOUNT
         bot.send_message(
-            call.message.chat.id,
-            f"✅ Payment Confirmed\n\n"
+            int(user_id),
+            f"✅ Payment Approved\n\n"
             f"📱 Phone:\n"
             f"`{selected['phone']}`\n\n"
             f"🔑 Password:\n"
             f"`{selected['password']}`\n\n"
             f"🔐 2FA:\n"
-            f"`{selected['twofa']}`",
+            f"`{selected['twofa']}`\n\n"
+            f"⚠️ Change details immediately.",
             parse_mode="Markdown"
         )
 
-        # ADMIN LOG
+        del pending[user_id]
+
+        bot.edit_message_text(
+            "✅ Approved",
+            call.message.chat.id,
+            call.message.message_id
+        )
+
+    # ======================
+    # REJECT
+    # ======================
+
+    elif call.data.startswith("reject_"):
+
+        user_id = call.data.split("_")[1]
+
         bot.send_message(
-            ADMIN_ID,
-            f"🛒 New Sale\n\n"
-            f"User: {call.from_user.id}\n"
-            f"Account: {selected['phone']}"
+            int(user_id),
+            "❌ Payment Rejected.\n"
+            "Contact support."
+        )
+
+        if user_id in pending:
+            del pending[user_id]
+
+        bot.edit_message_text(
+            "❌ Rejected",
+            call.message.chat.id,
+            call.message.message_id
         )
 
 # ==========================================
