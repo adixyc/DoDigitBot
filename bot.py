@@ -1,5 +1,5 @@
 # ==========================================
-# DoDigitBot - Advanced Version
+# DoDigitBot - Ultimate Version
 # Hosting: Render
 # ==========================================
 
@@ -69,6 +69,12 @@ if not os.path.exists(DB_FILE):
 
     with open(DB_FILE, "w") as f:
         json.dump(sample, f, indent=4)
+
+# ==========================================
+# TEMP STORAGE
+# ==========================================
+
+pending = {}
 
 # ==========================================
 # LOAD / SAVE
@@ -153,6 +159,11 @@ def start(message):
         callback_data="stock"
     )
 
+    deposit_btn = types.InlineKeyboardButton(
+        "💳 Deposit",
+        callback_data="deposit"
+    )
+
     channel_btn = types.InlineKeyboardButton(
         "📢 Channel",
         url="https://t.me/star_otps"
@@ -164,6 +175,7 @@ def start(message):
     )
 
     keyboard.add(buy_btn, stock_btn)
+    keyboard.add(deposit_btn)
     keyboard.add(channel_btn, support_btn)
 
     bot.send_message(
@@ -200,6 +212,43 @@ def callback_handler(call):
                 call.id,
                 "❌ Join channel first."
             )
+
+    # ======================
+    # DEPOSIT
+    # ======================
+
+    elif call.data == "deposit":
+
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+
+        copy_btn = types.InlineKeyboardButton(
+            "📋 Copy UPI",
+            url=f"https://upi://pay?pa={UPI_ID}"
+        )
+
+        channel_btn = types.InlineKeyboardButton(
+            "📢 Join Channel",
+            url="https://t.me/star_otps"
+        )
+
+        keyboard.add(copy_btn)
+        keyboard.add(channel_btn)
+
+        caption = (
+            "💳 *Deposit Funds*\n\n"
+            f"📲 UPI ID:\n`{UPI_ID}`\n\n"
+            "⚠️ Scan QR below."
+        )
+
+        photo = open("qr.jpg", "rb")
+
+        bot.send_photo(
+            call.message.chat.id,
+            photo,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
 
     # ======================
     # STOCK
@@ -316,7 +365,7 @@ def verify_payment(message):
         return
 
     # ======================================
-    # SEND UTR TO ADMIN
+    # SEND TO ADMIN
     # ======================================
 
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -341,23 +390,15 @@ def verify_payment(message):
         reply_markup=keyboard
     )
 
-    # TEMP SAVE
     pending[str(message.from_user.id)] = selected
 
     bot.send_message(
         message.chat.id,
-        "⏳ Payment verification pending.\n"
-        "Admin will verify shortly."
+        "⏳ Payment verification pending."
     )
 
 # ==========================================
-# TEMP STORAGE
-# ==========================================
-
-pending = {}
-
-# ==========================================
-# APPROVE / REJECT
+# ADMIN ACTIONS
 # ==========================================
 
 @bot.callback_query_handler(func=lambda call:
@@ -379,6 +420,7 @@ def admin_actions(call):
                 call.id,
                 "Expired."
             )
+
             return
 
         selected = pending[user_id]
@@ -424,11 +466,11 @@ def admin_actions(call):
 
         bot.send_message(
             int(user_id),
-            "❌ Payment Rejected.\n"
-            "Contact support."
+            "❌ Payment Rejected.\nContact support."
         )
 
         if user_id in pending:
+
             del pending[user_id]
 
         bot.edit_message_text(
